@@ -217,8 +217,8 @@
                 logMessage('藍牙連線成功，已啟用通知。', 'SUCCESS');
                 connectButton.textContent = '斷開連線';
 
-                // 啟用所有控制按鈕
-                [armButton, disarmButton, toggleLightButton, readLogButton, readInventoryButton].forEach(btn => btn.disabled = false);
+                // **** 核心修正: 確保所有控制按鈕都被啟用 (包括 unlockButton 和 stopAlarmButton) ****
+                [armButton, disarmButton, unlockButton, stopAlarmButton, toggleLightButton, readLogButton, readInventoryButton].forEach(btn => btn.disabled = false);
 
             } catch (error) {
                 logMessage(`連線失敗: ${error.message}`, 'ERROR');
@@ -258,7 +258,7 @@
                 // 根據狀態設定顏色
                 securityStatusDiv.classList.remove('bg-success', 'bg-danger', 'bg-gray-200');
                 alarmMessageDiv.classList.add('hidden');
-                stopAlarmButton.disabled = false;
+                // stopAlarmButton.disabled = false; // 這行會被連線成功時的邏輯覆蓋，故在此處不用
 
                 if (status === 'ARMED') {
                     securityStatusDiv.classList.add('bg-success', 'text-white');
@@ -299,7 +299,10 @@
             sendCommand('UNLOCK'); 
 
             unlockButton.disabled = true;
-            stopAlarmButton.disabled = true; // 解鎖時無法停止警報
+            // 解鎖時禁用設防/解除設防和警報按鈕，防止操作干擾
+            armButton.disabled = true; 
+            disarmButton.disabled = true;
+            stopAlarmButton.disabled = true; 
             
             // 倒數計時
             unlockTimer = setInterval(() => {
@@ -324,7 +327,12 @@
             }
             unlockButton.textContent = '開門 5 秒 (UNLOCK)';
             unlockButton.disabled = false;
+            
+            // 恢復其他按鈕
+            armButton.disabled = false;
+            disarmButton.disabled = false;
             stopAlarmButton.disabled = false;
+            
             unlockButton.classList.remove('bg-gray-400');
             unlockButton.classList.add('bg-primary', 'hover:bg-blue-600');
         }
@@ -353,10 +361,10 @@
 
         // 門鎖按鈕使用新的脈衝邏輯
         unlockButton.addEventListener('click', startUnlockCountdown); 
-        // 移除對 'LOCK' 按鈕的監聽器
-
+        
         // 初始化：禁用控制按鈕直到連線成功
         document.addEventListener('DOMContentLoaded', () => {
+            // 確保初始化時，所有按鈕都被禁用
             [armButton, disarmButton, unlockButton, stopAlarmButton, toggleLightButton, readLogButton, readInventoryButton].forEach(btn => btn.disabled = true);
             logMessage('介面準備就緒。請點擊連線按鈕。');
         });
@@ -364,4 +372,3 @@
     </script>
 </body>
 </html>
-
