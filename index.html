@@ -20,7 +20,7 @@
     <div id="app" class="max-w-4xl mx-auto bg-white shadow-2xl rounded-2xl p-6 md:p-10 border-t-4 border-purple-600">
         <header class="mb-8 text-center sm:text-left">
             <h1 class="text-3xl font-bold text-gray-800">行動安全系統 (語音版)</h1>
-            <p class="text-sm text-gray-500 mt-1">Web Bluetooth + Web Speech API (V23 相容)</p>
+            <p class="text-sm text-gray-500 mt-1">Web Bluetooth + Web Speech API (V23 Compatible, Fixed)</p>
         </header>
 
         <!-- 連線狀態 -->
@@ -185,7 +185,7 @@
         function handleNotifications(event) {
             const val = new TextDecoder().decode(event.target.value).trim();
             
-            // 狀態同步
+            // V23 狀態同步與警報回饋處理
             if (val.includes("STATUS: ARMED")) { isArmed = true; isAlarmOn = false; updateUI(); }
             else if (val.includes("STATUS: DISARMED")) { isArmed = false; isAlarmOn = false; updateUI(); }
             else if (val.includes("STATUS: LIGHT_ON")) { isLightOn = true; updateUI(); }
@@ -193,7 +193,10 @@
             else if (val.includes("STATUS: ALARM_ON")) { isAlarmOn = true; updateUI(); }
             else if (val.includes("STATUS: ALARM_OFF")) { isAlarmOn = false; updateUI(); }
             else if (val.includes("ALARM_TRIGGERED:")) { 
-                isArmed = true; isAlarmOn = true; updateUI(); 
+                // 收到警報觸發的回饋 (V23 格式)，強制更新設防和警報狀態
+                isArmed = true; 
+                isAlarmOn = true; 
+                updateUI(); 
                 log(val, 'error');
             }
             
@@ -230,31 +233,26 @@
             } catch(e) { log('發送失敗: ' + e.message, 'error'); }
         }
         
-        // 語音指令處理函式
+        // 語音指令處理函式 - 已修正 解除警報 與 解除設防 的指令衝突
         function processVoiceCommand(text) {
             let cmdToSend = null;
             const t = text.replace(/ /g, ''); // 移除空格
 
             if (t.includes('設防')) { cmdToSend = 'ARM'; }
-            else if (t.includes('解除') || t.includes('解防')) { cmdToSend = 'DISARM'; }
+            // ** 修正點：先檢查「解除警報」以確保優先級 **
+            else if (t.includes('開啟警報')) { cmdToSend = 'ALARM_ON'; }
+            else if (t.includes('關閉警報') || t.includes('解除警報')) { cmdToSend = 'ALARM_OFF'; }
+            // 檢查「解除設防」 (只檢查「解除」或「解防」，因為「解除警報」已處理)
+            else if (t.includes('解除') || t.includes('解防')) { cmdToSend = 'DISARM'; } 
             else if (t.includes('開門')) { cmdToSend = 'DOOR_OPEN'; }
             else if (t.includes('開燈')) { cmdToSend = 'LIGHT_ON'; }
             else if (t.includes('關燈')) { cmdToSend = 'LIGHT_OFF'; }
-            else if (t.includes('開啟警報')) { cmdToSend = 'ALARM_ON'; }
-            else if (t.includes('關閉警報') || t.includes('解除警報')) { cmdToSend = 'ALARM_OFF'; }
             else if (t.includes('讀取紀錄') || t.includes('讀紀錄')) { cmdToSend = 'READ_LOG'; }
             
             if (cmdToSend) {
                 log(`[語音執行] 指令: ${cmdToSend}`, 'info');
-                // 對於 LIGHT 和 ALARM，如果用戶說 "開燈" 或 "關燈"，我們發送明確指令
-                // 而非 TOGGLE，以確保語音指令的確定性
-                if (cmdToSend.includes('LIGHT') && cmdToSend !== 'LIGHT_TOGGLE') {
-                    sendCommand(cmdToSend);
-                } else if (cmdToSend.includes('ALARM') && cmdToSend !== 'ALARM_TOGGLE') {
-                    sendCommand(cmdToSend);
-                } else {
-                    sendCommand(cmdToSend);
-                }
+                // 發送明確的指令，而非 TOGGLE，以確保語音指令的確定性
+                sendCommand(cmdToSend);
             } else {
                 log(`[語音執行] 無法識別指令: ${text}`, 'error');
             }
@@ -276,6 +274,8 @@
                  isConnected = true; isArmed = false; 
                  updateUI();
                  log('連線成功！請等待系統狀態同步...');
+                 // 發送 QUERY_STATUS 確保同步初始狀態 (V23 應會自動發送狀態，但保險起見)
+                 await sendCommand('QUERY_STATUS');
              } catch(e) { log('連線失敗: ' + e.message, 'error'); }
         }
 
@@ -297,4 +297,5 @@
     </script>
 </body>
 </html>
+
 
