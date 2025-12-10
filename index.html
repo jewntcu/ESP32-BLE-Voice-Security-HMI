@@ -42,7 +42,9 @@
             
             <button id="btn-alarm" data-cmd="ALARM_TOGGLE" disabled class="control-btn bg-red-500 text-white col-span-2">開/關警報</button>
             <button id="btn-log" data-cmd="READ_LOG" disabled class="control-btn bg-purple-600 text-white hover:bg-purple-700 col-span-2">讀取紀錄</button>
-
+            
+            <button id="btn-inventory" data-cmd="INVENTORY" disabled class="control-btn bg-orange-500 text-white hover:bg-orange-600 col-span-2">執行 ISO 15693 盤查</button>
+            
             <!-- 語音按鈕 -->
             <button id="btn-voice" disabled class="control-btn bg-pink-500 text-white hover:bg-pink-600 col-span-2 flex items-center justify-center gap-2">
                 🎤 點擊說話 (中文)
@@ -80,6 +82,8 @@
         const btnAlarm = document.getElementById('btn-alarm');
         const btnLog = document.getElementById('btn-log');
 
+        const btnInventory = document.getElementById('btn-inventory');
+        
         let recognition = null;
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
@@ -135,7 +139,9 @@
             statusDisplay.className = isConnected ? (isArmed ? "text-xl font-bold text-yellow-600" : "text-xl font-bold text-green-600") : "text-xl font-bold text-red-600";
             statusIcon.className = isConnected ? (isArmed ? "p-2 rounded-full bg-yellow-500 text-white" : "p-2 rounded-full bg-green-500 text-white") : "p-2 rounded-full bg-gray-400 text-white";
 
-            [btnDoor, btnLight, btnAlarm, btnLog].forEach(btn => btn.disabled = !isConnected);
+          //  [btnDoor, btnLight, btnAlarm, btnLog].forEach(btn => btn.disabled = !isConnected);
+            [btnDoor, btnLight, btnAlarm, btnLog, btnInventory].forEach(btn => btn.disabled = !isConnected);
+            
             if (recognition) btnVoice.disabled = !isConnected;
             
             if(isConnected) {
@@ -200,19 +206,41 @@
                 log(val, 'error');
             }
             
-            // 日誌數據處理
-            else if (val.startsWith("LOG_DATA:")) {
+            // =========================================================================
+            // D. 新增：處理 Log 紀錄與 Inventory 盤查的特殊回覆
+            // =========================================================================
+            
+            // 處理 Log 紀錄數量回覆 (由 ESP32 傳遞 LP-2010 的 >> Number of Login: XXX)
+            else if (val.startsWith("LOG_COUNT:")) {
+                // substring(10) 用於移除 "LOG_COUNT:" 9個字元 + 1個空格
+                log(`[登錄紀錄] 數量回覆: ${val.substring(10).trim()}`, 'data'); 
+            }
+            // 處理 Inventory 盤查數量回覆 (由 ESP32 傳遞 LP-2010 的 >> Number of Tags: XXX)
+            else if (val.startsWith("INVENTORY_COUNT:")) {
+                // substring(16) 用於移除 "INVENTORY_COUNT:" 15個字元 + 1個空格
+                log(`[盤查] 數量回覆: ${val.substring(16).trim()}`, 'data');
+            }
+            // 處理資料傳輸結束標記 (由 ESP32 傳遞 LP-2010 的 >> File END)
+            else if (val.includes("FILE_TRANSFER_COMPLETE")) {
+                log("STATUS: 資料傳輸完成", 'data');
+            }
+        
+            // 日誌/資料數據處理 (原始 LOG_DATA: 邏輯, 現在用於 Log 紀錄和 Inventory UID 資料)
+            else if (val.startsWith("LOG_DATA:")) { 
                 const rawData = val.substring(9).trim();
-                if (rawData.includes("'")) { 
-                     log(parseLogData(rawData), 'data');
+                // 檢查是否包含單引號，這是 LP-2010 HEX 紀錄的標記 (表示這是帶有時間戳的登錄紀錄)
+                if (rawData.includes("'")) {
+                    log(parseLogData(rawData), 'data');
                 } else {
-                     log(`[日誌原始資料] ${rawData}`, 'data');
+                    // 如果沒有單引號，這可能是單純的 Inventory UID 原始資料行
+                    log(`[原始資料] ${rawData}`, 'data');
                 }
-            } else {
+            } 
+            // 處理其他未識別的 BLE 回覆 (LP2010_RX: Ver, Errors 等)
+            else {
                 log("RX: " + val, 'rx');
             }
         }
-
         async function sendCommand(cmd) {
             if (!rxChar) return log('錯誤: 藍牙特徵值未初始化', 'error');
             try {
@@ -248,7 +276,10 @@
             else if (t.includes('開燈')) { cmdToSend = 'LIGHT_ON'; }
             else if (t.includes('關燈')) { cmdToSend = 'LIGHT_OFF'; }
             else if (t.includes('讀取紀錄') || t.includes('讀紀錄')) { cmdToSend = 'READ_LOG'; }
-            
+            // -------------------------------------------------------------------------
+            // 在處理完 "讀取紀錄" 的邏輯之後
+            else if (t.includes('盤查') || t.includes('點貨')) { cmdToSend = 'INVENTORY'; }
+            // -------------------------------------------------------------------------
             if (cmdToSend) {
                 log(`[語音執行] 指令: ${cmdToSend}`, 'info');
                 // 發送明確的指令，而非 TOGGLE，以確保語音指令的確定性
@@ -286,6 +317,9 @@
         btnLight.addEventListener('click', () => sendCommand('LIGHT_TOGGLE'));
         btnAlarm.addEventListener('click', () => sendCommand('ALARM_TOGGLE'));
         btnLog.addEventListener('click', () => sendCommand('READ_LOG'));
+        
+        btnInventory.addEventListener('click', () => sendCommand('INVENTORY'));
+        
         btnVoice.addEventListener('click', () => {
             if (recognition && isConnected) {
                 recognition.start();
@@ -297,5 +331,6 @@
     </script>
 </body>
 </html>
+
 
 
